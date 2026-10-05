@@ -171,7 +171,7 @@ def create_mcp_server(default_project_root: str | None = None) -> MCPServer:
                 return SearchResultModel(
                     success=False,
                     message=(
-                        f"No ccc project found at or above {project_path!r}."
+                        f"No ccc project found at or above {project_path}."
                         " Run `ccc init` in the project root."
                     ),
                 )
