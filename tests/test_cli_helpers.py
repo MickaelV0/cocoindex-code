@@ -357,6 +357,78 @@ def test_version_works_outside_a_project(tmp_path: Path, monkeypatch: pytest.Mon
 
 
 # ---------------------------------------------------------------------------
+# User settings dir is never a project root
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture()
+def fake_home_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A non-git HOME with global settings, as the user settings dir, and cwd set to it."""
+    home = tmp_path / "home"
+    user_dir = home / ".cocoindex_code"
+    user_dir.mkdir(parents=True)
+    (user_dir / "global_settings.yml").write_text(
+        "embedding:\n  model: test\n  provider: litellm\n"
+    )
+    monkeypatch.setenv("COCOINDEX_CODE_DIR", str(user_dir))
+    monkeypatch.chdir(home)
+    return home
+
+
+def test_index_in_user_settings_root_refuses_to_auto_init(fake_home_cli: Path) -> None:
+    from typer.testing import CliRunner
+
+    result = CliRunner().invoke(cli.app, ["index"])
+
+    assert result.exit_code == 1
+    assert "user settings directory" in result.output
+    assert not (fake_home_cli / ".cocoindex_code" / "settings.yml").exists()
+    assert not (fake_home_cli / ".gitignore").exists()
+
+
+@pytest.mark.parametrize("stale_settings", [False, True])
+def test_init_in_user_settings_root_refuses(fake_home_cli: Path, stale_settings: bool) -> None:
+    from typer.testing import CliRunner
+
+    settings_file = fake_home_cli / ".cocoindex_code" / "settings.yml"
+    if stale_settings:
+        settings_file.write_text("include_patterns: []\n")
+
+    result = CliRunner().invoke(cli.app, ["init"])
+
+    assert result.exit_code == 1
+    assert "user settings directory" in result.output
+    assert "already initialized" not in result.output
+    assert settings_file.exists() is stale_settings
+    assert not (fake_home_cli / ".gitignore").exists()
+
+
+def test_require_project_root_in_user_settings_subdir_does_not_resolve_to_it(
+    fake_home_cli: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stale ``settings.yml`` in the user settings root does not capture subdirectories."""
+    (fake_home_cli / ".cocoindex_code" / "settings.yml").write_text("include_patterns: []\n")
+    sub = fake_home_cli / "scratch"
+    sub.mkdir()
+    monkeypatch.chdir(sub)
+    from click.exceptions import Exit
+
+    with pytest.raises(Exit):
+        require_project_root()
+
+
+def test_index_auto_init_in_project_below_user_settings_root_still_works(
+    fake_home_cli: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = fake_home_cli / "proj"
+    (project / ".git").mkdir(parents=True)
+    monkeypatch.chdir(project)
+
+    assert require_project_root(auto_init=True) == project
+    assert (project / ".cocoindex_code" / "settings.yml").is_file()
+
+
+# ---------------------------------------------------------------------------
 # ccc init — auto-populate indexing_params / query_params from curated table
 # ---------------------------------------------------------------------------
 

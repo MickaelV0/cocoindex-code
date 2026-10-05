@@ -65,6 +65,8 @@ Two install flavors: `[full]` bundles `sentence-transformers` (local inference);
 
 `find_project_root()` walks up from CWD looking for `.cocoindex_code/settings.yml`. Global settings at `~/.cocoindex_code/global_settings.yml` (location overridable via `COCOINDEX_CODE_DIR`). The `COCOINDEX_CODE_DB_PATH_MAPPING` env var redirects database files to a different directory (used in Docker to avoid LMDB on bind mounts).
 
+The directory whose `.cocoindex_code` *is* the user settings dir (`user_settings_dir()`: `$HOME` by default, `/x` for `COCOINDEX_CODE_DIR=/x/.cocoindex_code`) is never a project root: discovery skips it, and `ccc init` / auto-init / `save_project_settings` refuse it (`settings.is_user_settings_root`). The OMP extension and `hooks/hooks.json` apply the same rule by requiring `.cocoindex_code/settings.yml`.
+
 
 ## Code Conventions
 

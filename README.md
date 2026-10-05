@@ -279,6 +279,8 @@ The background daemon starts automatically on first use.
 
 > **Tip:** You can skip `ccc init` and go straight to `ccc index` — it auto-initializes new projects with default settings. If global settings are missing too (first use on the machine), it walks you through the same model setup as `ccc init` when run interactively; non-interactive runs (scripts, hooks) still require a one-time `ccc init` first.
 
+> A directory whose `.cocoindex_code` is ccc's own user settings directory (`~/.cocoindex_code` by default, so your home directory) is never treated as a project: `ccc init` and `ccc index` refuse to run there, and commands run from other directories under it only find projects with their own `.cocoindex_code/settings.yml`. Run them from inside a project.
+
 ### CLI Reference
 
 | Command | Description |

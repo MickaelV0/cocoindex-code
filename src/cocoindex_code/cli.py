@@ -26,8 +26,10 @@ from ._version import __version__
 from .settings import (
     DEFAULT_ST_MODEL,
     EmbeddingSettings,
+    UserSettingsDirError,
     cocoindex_db_path,
     default_project_settings,
+    ensure_not_user_settings_root,
     find_parent_with_marker,
     find_project_root,
     format_path_for_display,
@@ -123,8 +125,18 @@ def _auto_init_project(cwd: Path) -> Path:
     return root
 
 
+def _require_not_user_settings_root(root: Path) -> None:
+    """Exit 1 with a clear error if *root* is the user settings root (never a project)."""
+    try:
+        ensure_not_user_settings_root(root)
+    except UserSettingsDirError as e:
+        _typer.echo(f"Error: {e}", err=True)
+        raise _typer.Exit(code=1) from e
+
+
 def _create_project_settings(root: Path) -> None:
     """Write default project settings at *root* and gitignore the settings dir."""
+    _require_not_user_settings_root(root)
     save_project_settings(root, default_project_settings())
     add_to_gitignore(root)
     _typer.echo(f"Created project settings: {format_path_for_display(project_settings_path(root))}")
@@ -605,6 +617,7 @@ def init(
 ) -> None:
     """Initialize a project for cocoindex-code."""
     cwd = Path.cwd().resolve()
+    _require_not_user_settings_root(cwd)
     settings_file = project_settings_path(cwd)
 
     user_path = user_settings_path()
