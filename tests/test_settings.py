@@ -22,17 +22,16 @@ from cocoindex_code.settings import (
     LanguageOverride,
     ProjectSettings,
     UserSettings,
-    UserSettingsDirError,
     _reset_db_path_mapping_cache,
     _reset_host_path_mapping_cache,
     _user_settings_from_dict,
     default_project_settings,
     default_user_settings,
-    find_legacy_project_root,
     find_parent_with_marker,
     find_project_root,
     format_path_for_display,
     get_host_path_mappings,
+    is_user_settings_root,
     load_project_settings,
     load_user_settings,
     normalize_input_path,
@@ -236,84 +235,45 @@ def test_find_project_root_returns_none_when_not_initialized(tmp_path: Path) -> 
     assert find_project_root(standalone) is None
 
 
-@pytest.fixture()
-def fake_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """A HOME holding a stale project ``settings.yml`` next to ``global_settings.yml``.
-
-    ``COCOINDEX_CODE_DIR`` is unset, so ``user_settings_dir()`` is ``HOME/.cocoindex_code``.
-    """
+def test_is_user_settings_root_follows_ccc_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``$HOME`` by default; the parent of ``COCOINDEX_CODE_DIR`` only when that dir
+    is named ``.cocoindex_code`` (the Docker layout); otherwise no directory."""
     home = tmp_path / "home"
-    (home / ".cocoindex_code").mkdir(parents=True)
-    (home / ".cocoindex_code" / "global_settings.yml").write_text("embedding: {model: x}\n")
-    (home / ".cocoindex_code" / "settings.yml").write_text("include_patterns: []\n")
-    (home / "sub").mkdir()
-    monkeypatch.delenv("COCOINDEX_CODE_DIR", raising=False)
+    x = tmp_path / "x"
+    home.mkdir()
+    x.mkdir()
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("USERPROFILE", str(home))
-    return home
+    monkeypatch.delenv("COCOINDEX_CODE_DIR", raising=False)
+    assert is_user_settings_root(home)
+    assert not is_user_settings_root(x)
+
+    monkeypatch.setenv("COCOINDEX_CODE_DIR", str(x / ".cocoindex_code"))
+    assert is_user_settings_root(x)
+    assert not is_user_settings_root(home)
+
+    monkeypatch.setenv("COCOINDEX_CODE_DIR", str(x / "ccc"))
+    assert not is_user_settings_root(x)
+    assert not is_user_settings_root(home)
 
 
-def test_find_project_root_skips_user_settings_dir_root(fake_home: Path) -> None:
-    """The directory whose ``.cocoindex_code`` is the user settings dir is not a project,
-    even with a stale ``settings.yml`` inside it.
-    """
-    assert find_project_root(fake_home / "sub") is None
-    assert find_project_root(fake_home) is None
-
-
-def test_find_project_root_prefers_project_below_user_settings_root(fake_home: Path) -> None:
-    project = fake_home / "projects" / "proj"
-    (project / ".cocoindex_code").mkdir(parents=True)
-    (project / ".cocoindex_code" / "settings.yml").write_text("include_patterns: []\n")
-    (project / "src").mkdir()
-    assert find_project_root(project / "src") == project
-
-
-def test_find_project_root_user_settings_root_follows_env_override(
-    fake_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """With ``COCOINDEX_CODE_DIR`` elsewhere, HOME is an ordinary candidate again."""
-    monkeypatch.setenv("COCOINDEX_CODE_DIR", str(tmp_path / "elsewhere" / "ccc"))
-    assert find_project_root(fake_home / "sub") == fake_home
-
-
-def test_find_project_root_skips_root_of_overridden_user_settings_dir(
+def test_is_user_settings_root_through_symlinked_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``COCOINDEX_CODE_DIR=/x/.cocoindex_code`` makes ``/x`` the non-project directory."""
-    x = tmp_path / "x"
-    (x / ".cocoindex_code").mkdir(parents=True)
-    (x / ".cocoindex_code" / "settings.yml").write_text("include_patterns: []\n")
-    (x / "sub").mkdir()
-    monkeypatch.setenv("COCOINDEX_CODE_DIR", str(x / ".cocoindex_code"))
-    assert find_project_root(x / "sub") is None
-
-
-def test_find_legacy_project_root_skips_user_settings_dir_root(fake_home: Path) -> None:
-    (fake_home / ".cocoindex_code" / "cocoindex.db").write_text("")
-    assert find_legacy_project_root(fake_home / "sub") is None
-    legacy = fake_home / "projects" / "old"
-    (legacy / ".cocoindex_code").mkdir(parents=True)
-    (legacy / ".cocoindex_code" / "cocoindex.db").write_text("")
-    assert find_legacy_project_root(legacy) == legacy
-
-
-def test_find_parent_with_marker_skips_user_settings_dir_root(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    x = tmp_path / "x"
-    (x / ".cocoindex_code").mkdir(parents=True)
-    (x / ".cocoindex_code" / "settings.yml").write_text("include_patterns: []\n")
-    (x / "sub").mkdir()
-    monkeypatch.setenv("COCOINDEX_CODE_DIR", str(x / ".cocoindex_code"))
-    assert find_parent_with_marker(x / "sub") is None
-
-
-def test_save_project_settings_refuses_user_settings_dir_root(fake_home: Path) -> None:
-    before = (fake_home / ".cocoindex_code" / "settings.yml").read_text()
-    with pytest.raises(UserSettingsDirError, match="user settings directory"):
-        save_project_settings(fake_home, ProjectSettings(include_patterns=["**/*.py"]))
-    assert (fake_home / ".cocoindex_code" / "settings.yml").read_text() == before
+    real = tmp_path / "real_home"
+    (real / ".cocoindex_code").mkdir(parents=True)
+    link = tmp_path / "home"
+    try:
+        link.symlink_to(real, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks unavailable")
+    monkeypatch.setenv("HOME", str(link))
+    monkeypatch.setenv("USERPROFILE", str(link))
+    monkeypatch.delenv("COCOINDEX_CODE_DIR", raising=False)
+    assert is_user_settings_root(real)
+    assert is_user_settings_root(link)
 
 
 def test_find_parent_with_marker_finds_git(tmp_path: Path) -> None:

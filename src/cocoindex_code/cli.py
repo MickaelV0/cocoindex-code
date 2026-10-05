@@ -26,13 +26,13 @@ from ._version import __version__
 from .settings import (
     DEFAULT_ST_MODEL,
     EmbeddingSettings,
-    UserSettingsDirError,
+    auto_init_refusal,
     cocoindex_db_path,
     default_project_settings,
-    ensure_not_user_settings_root,
     find_parent_with_marker,
     find_project_root,
     format_path_for_display,
+    is_user_settings_root,
     normalize_input_path,
     project_settings_path,
     resolve_db_dir,
@@ -83,13 +83,19 @@ def _apply_host_cwd() -> None:
 def require_project_root(*, auto_init: bool = False) -> Path:
     """Find the project root by walking up from CWD.
 
-    Checks global settings first (more fundamental), then project settings.
+    Reports missing global settings before a missing project (more fundamental).
     With ``auto_init``, a missing project is initialized with default settings
-    instead of failing. Missing global settings run the same interactive model
+    instead of failing, unless that would be the user settings root (refused
+    first). Missing global settings run the same interactive model
     setup as ``ccc init`` — but only on a TTY, since picking an embedding model
     is a consequential choice; non-interactive runs (scripts, hooks, agents)
     still exit with code 1 rather than silently committing to a default model.
     """
+    cwd = Path.cwd()
+    root = find_project_root(cwd)
+    # Decide where auto-init would write, and whether it may, before the interactive
+    # model setup below, so a refusal never comes after a wasted prompt.
+    new_root = _auto_init_root(cwd) if root is None and auto_init else None
     gs_path = user_settings_path()
     if not gs_path.is_file():
         if auto_init and sys.stdin.isatty():
@@ -101,42 +107,59 @@ def require_project_root(*, auto_init: bool = False) -> Path:
                 err=True,
             )
             raise _typer.Exit(code=1)
-    root = find_project_root(Path.cwd())
+    if new_root is not None:
+        _create_project_settings(new_root)
+        return new_root
     if root is None:
-        if auto_init:
-            return _auto_init_project(Path.cwd())
         _typer.echo(
             "Error: Not in an initialized project directory.\n"
             "Run `ccc init` in your project root to get started.",
             err=True,
         )
         raise _typer.Exit(code=1)
+    _note_if_user_settings_root(root)
     return root
 
 
-def _auto_init_project(cwd: Path) -> Path:
-    """Create default project settings without an explicit ``ccc init``.
+def _note_if_user_settings_root(root: Path) -> None:
+    """Tell the user when a repo below the user settings root resolves to it.
+
+    Such a project is usually left over from an older ccc that auto-initialized
+    ``$HOME``: every repo below it without settings of its own resolves to it.
+    """
+    if not is_user_settings_root(root):
+        return
+    repo = find_parent_with_marker(Path.cwd())
+    if repo is None or repo == root:
+        return
+    shown_root = format_path_for_display(root)
+    shown_repo = format_path_for_display(repo)
+    _typer.echo(
+        f"Note: {shown_repo} has no ccc project of its own, so the project in use is"
+        f" {shown_root}, whose .cocoindex_code directory is also ccc's user settings"
+        f" directory. If {shown_root} is not meant to be a project, run"
+        f" `ccc reset --all` there, then `ccc init` in {shown_repo}.",
+        err=True,
+    )
+
+
+def _auto_init_root(cwd: Path) -> Path:
+    """Return where ``ccc index`` may create default project settings, or exit.
 
     Anchors at the nearest parent git root when there is one, so running from
     a repo subdirectory initializes the repo root rather than the subdirectory.
+    Never the user settings root (see ``auto_init_refusal``).
     """
     root = find_parent_with_marker(cwd) or cwd
-    _create_project_settings(root)
+    refusal = auto_init_refusal(root)
+    if refusal is not None:
+        _typer.echo(f"Error: {refusal}", err=True)
+        raise _typer.Exit(code=1)
     return root
-
-
-def _require_not_user_settings_root(root: Path) -> None:
-    """Exit 1 with a clear error if *root* is the user settings root (never a project)."""
-    try:
-        ensure_not_user_settings_root(root)
-    except UserSettingsDirError as e:
-        _typer.echo(f"Error: {e}", err=True)
-        raise _typer.Exit(code=1) from e
 
 
 def _create_project_settings(root: Path) -> None:
     """Write default project settings at *root* and gitignore the settings dir."""
-    _require_not_user_settings_root(root)
     save_project_settings(root, default_project_settings())
     add_to_gitignore(root)
     _typer.echo(f"Created project settings: {format_path_for_display(project_settings_path(root))}")
@@ -617,7 +640,6 @@ def init(
 ) -> None:
     """Initialize a project for cocoindex-code."""
     cwd = Path.cwd().resolve()
-    _require_not_user_settings_root(cwd)
     settings_file = project_settings_path(cwd)
 
     user_path = user_settings_path()

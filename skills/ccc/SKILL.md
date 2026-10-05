@@ -12,6 +12,7 @@ description: "This skill should be used when code search is needed (whether expl
 The agent owns the `ccc` lifecycle for the current project — initialization, indexing, and searching. Do not ask the user to perform these steps; handle them automatically.
 
 - **Initialization**: If `ccc search` or `ccc index` fails with an initialization error (e.g., "Not in an initialized project directory"), run `ccc init` from the project root directory, then `ccc index` to build the index, then retry the original command.
+  - Exception: if `ccc index` refuses because the directory holds ccc's user settings directory (usually your home directory), do not run `ccc init` there. Run ccc from inside the project instead, or ask the user which project to use.
 - **Index freshness**: Keep the index up to date by running `ccc index` (or `ccc search --refresh`) when the index may be stale — e.g., at the start of a session, or after making significant code changes (new files, refactors, renamed modules). There is no need to re-index between consecutive searches if no code was changed in between.
 - **Installation**: If `ccc` itself is not found (command not found), refer to [management.md](references/management.md) for installation instructions and inform the user.
 

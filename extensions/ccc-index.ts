@@ -37,8 +37,9 @@ type ExtensionApi = {
   ) => void;
 };
 
-// ccc's user settings dir (global_settings.yml, daemon files). The directory
-// that contains it is never a project, even if a stale settings.yml sits there.
+// ccc's user settings dir (global_settings.yml, daemon files). Auto-indexing never
+// runs in the directory that contains it: a project there covers every directory
+// below it, and is usually left over from an older ccc that auto-initialized $HOME.
 function userSettingsDir(): string {
   return resolvedPath(
     process.env.COCOINDEX_CODE_DIR || join(homedir(), ".cocoindex_code"),
@@ -62,7 +63,8 @@ function isFile(path: string): boolean {
   }
 }
 
-// Mirrors ccc's find_project_root: `.cocoindex_code/settings.yml` marks a project.
+// Mirrors ccc's find_project_root (`.cocoindex_code/settings.yml` marks a project),
+// except that it never returns the directory holding the user settings dir.
 function findInitializedRoot(cwd: string): string | null {
   const userDir = userSettingsDir();
   let dir = cwd;

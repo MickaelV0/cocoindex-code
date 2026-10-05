@@ -225,10 +225,12 @@ def main() -> None:
     Auto-detects/creates settings from env vars, then delegates to daemon.
     """
     import argparse
+    import sys
 
     from .settings import (
         EmbeddingSettings,
         LanguageOverride,
+        auto_init_refusal,
         default_project_settings,
         default_user_settings,
         find_legacy_project_root,
@@ -265,6 +267,12 @@ def main() -> None:
     # --- Auto-create project settings if needed ---
     proj_settings_file = project_settings_path(project_root)
     if not proj_settings_file.is_file():
+        refusal = auto_init_refusal(project_root)
+        if refusal is not None:
+            sys.exit(
+                f"Error: {refusal} To serve a project from here, set"
+                " COCOINDEX_CODE_ROOT_PATH to its directory."
+            )
         ps = default_project_settings()
 
         # Migrate COCOINDEX_CODE_EXCLUDED_PATTERNS
@@ -320,8 +328,6 @@ def main() -> None:
     from .protocol import IndexingProgress
 
     if args.command == "index":
-        import sys
-
         from rich.console import Console
         from rich.live import Live
         from rich.spinner import Spinner

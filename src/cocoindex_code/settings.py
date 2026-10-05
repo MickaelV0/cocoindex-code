@@ -354,49 +354,39 @@ def project_settings_path(project_root: Path) -> Path:
     return project_root / _SETTINGS_DIR_NAME / _SETTINGS_FILE_NAME
 
 
-class UserSettingsDirError(ValueError):
-    """Raised when a directory holding the user settings dir is used as a project root."""
-
-
 def is_user_settings_root(directory: Path) -> bool:
     """Return whether *directory*'s ``.cocoindex_code`` is the user settings dir.
 
-    That directory holds ``global_settings.yml`` and the daemon runtime files, so
-    it can never also be a project's ``.cocoindex_code``. By default this is
-    ``$HOME``; with ``COCOINDEX_CODE_DIR=/x/.cocoindex_code`` it is ``/x``; with
-    ``COCOINDEX_CODE_DIR=/x/ccc`` no directory matches. Single source of truth for
-    project discovery and for refusing to write project settings.
+    That is ``$HOME`` by default, ``/x`` with ``COCOINDEX_CODE_DIR=/x/.cocoindex_code``
+    (the Docker image's layout), and no directory with ``COCOINDEX_CODE_DIR=/x/ccc``.
+    A project there covers every directory below it, so ccc never creates one
+    automatically; ``ccc init`` run there by hand still does.
     """
     return (directory / _SETTINGS_DIR_NAME).resolve() == user_settings_dir().resolve()
 
 
-def ensure_not_user_settings_root(directory: Path) -> None:
-    """Raise :class:`UserSettingsDirError` if *directory* is the user settings root."""
-    if is_user_settings_root(directory):
-        raise UserSettingsDirError(
-            f"{format_path_for_display(directory)} cannot be a project: its "
-            f"{_SETTINGS_DIR_NAME} directory is the user settings directory "
-            f"({format_path_for_display(user_settings_dir())}). "
-            "Run this from inside a project directory instead."
-        )
-
-
-def _has_project_settings(directory: Path) -> bool:
-    """Return whether *directory* is initialized as a project (has ``settings.yml``)."""
-    return (directory / _SETTINGS_DIR_NAME / _SETTINGS_FILE_NAME).is_file() and (
-        not is_user_settings_root(directory)
+def auto_init_refusal(directory: Path) -> str | None:
+    """Return why *directory* must not be initialized automatically, or ``None``."""
+    if not is_user_settings_root(directory):
+        return None
+    shown = format_path_for_display(directory)
+    return (
+        f"{shown} has no project settings, and ccc does not create them there"
+        f" automatically: its {_SETTINGS_DIR_NAME} directory is ccc's user settings"
+        " directory, so a project there would cover every directory below it."
+        " Run ccc from inside a project instead. Indexing all of"
+        f" {shown} is for the user to decide: they can run `ccc init` there."
     )
 
 
 def find_project_root(start: Path) -> Path | None:
     """Walk up from *start* looking for ``.cocoindex_code/settings.yml``.
 
-    Returns the directory containing it, or ``None``. The directory whose
-    ``.cocoindex_code`` is the user settings dir is never a project root.
+    Returns the directory containing it, or ``None``.
     """
     current = start.resolve()
     while True:
-        if _has_project_settings(current):
+        if (current / _SETTINGS_DIR_NAME / _SETTINGS_FILE_NAME).is_file():
             return current
         parent = current.parent
         if parent == current:
@@ -409,13 +399,10 @@ def find_legacy_project_root(start: Path) -> Path | None:
 
     Used by the backward-compat ``cocoindex-code`` entrypoint to re-anchor to a
     previously-indexed project tree.  Returns the first matching directory, or ``None``.
-    The directory whose ``.cocoindex_code`` is the user settings dir is skipped.
     """
     current = start.resolve()
     while True:
-        if (
-            current / _SETTINGS_DIR_NAME / _COCOINDEX_DB_NAME
-        ).exists() and not is_user_settings_root(current):
+        if (current / _SETTINGS_DIR_NAME / _COCOINDEX_DB_NAME).exists():
             return current
         parent = current.parent
         if parent == current:
@@ -442,7 +429,9 @@ def find_parent_with_marker(start: Path) -> Path | None:
         parent = current.parent
         if parent == current:
             return None
-        if _has_project_settings(current) or (current / ".git").is_dir():
+        if (current / _SETTINGS_DIR_NAME / _SETTINGS_FILE_NAME).is_file() or (
+            current / ".git"
+        ).is_dir():
             return current
         current = parent
 
@@ -764,11 +753,7 @@ def load_project_settings(project_root: Path) -> ProjectSettings:
 
 
 def save_project_settings(project_root: Path, settings: ProjectSettings) -> Path:
-    """Write project settings YAML. Returns path written.
-
-    Raises :class:`UserSettingsDirError` if *project_root* is the user settings root.
-    """
-    ensure_not_user_settings_root(project_root)
+    """Write project settings YAML. Returns path written."""
     path = project_settings_path(project_root)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
