@@ -24,6 +24,7 @@ from ._version import __version__
 from .settings import (
     DaemonSettings,
     find_project_root,
+    format_path_for_display,
     load_user_settings,
     normalize_input_path,
 )
@@ -143,11 +144,13 @@ def create_mcp_server(default_project_root: str | None = None) -> MCPServer:
         project_path: str | None = Field(
             default=None,
             description=(
-                "Absolute path of your current working directory, or any path inside"
-                " the project to search. The project is the nearest ancestor directory"
-                " holding .cocoindex_code/settings.yml. When omitted, the project this"
-                " server was started in is searched, even if your working directory has"
-                " since moved to another checkout."
+                "Absolute path of your current working directory, or any absolute path"
+                " inside the project to search (relative paths are rejected). The"
+                " project is the nearest directory at or above it holding"
+                " .cocoindex_code/settings.yml. When omitted, the project this server"
+                " was started in is searched (an error if it started outside any"
+                " project), even if your working directory has since moved to another"
+                " checkout."
             ),
         ),
     ) -> SearchResultModel:
@@ -166,7 +169,21 @@ def create_mcp_server(default_project_root: str | None = None) -> MCPServer:
                 )
             project_root = default_project_root
         else:
-            found = find_project_root(Path(normalize_input_path(project_path)))
+            # Relative paths would resolve against the server's cwd, i.e. silently
+            # against the checkout it started in: the very bug project_path fixes.
+            # Checked after host->container mapping, so mapped host paths qualify.
+            try:
+                local_path = Path(normalize_input_path(project_path))
+                if not local_path.is_absolute():
+                    return SearchResultModel(
+                        success=False,
+                        message=f"project_path must be an absolute path, got {project_path!r}.",
+                    )
+                found = find_project_root(local_path)
+            except (OSError, ValueError, RuntimeError) as e:  # RuntimeError: 3.11 symlink loop
+                return SearchResultModel(
+                    success=False, message=f"Could not resolve project_path {project_path!r}: {e}"
+                )
             if found is None:
                 return SearchResultModel(
                     success=False,
@@ -177,8 +194,12 @@ def create_mcp_server(default_project_root: str | None = None) -> MCPServer:
                 )
             project_root = str(found)
 
+        # Results carry paths relative to the project root; report the root in the
+        # caller's (host) form so it can join them.
+        shown_root: str | None = None
         loop = asyncio.get_event_loop()
         try:
+            shown_root = format_path_for_display(project_root)
             if refresh_index:
                 await loop.run_in_executor(None, lambda: _client.index(project_root))
             resp = await loop.run_in_executor(
@@ -208,11 +229,11 @@ def create_mcp_server(default_project_root: str | None = None) -> MCPServer:
                 total_returned=resp.total_returned,
                 offset=resp.offset,
                 message=resp.message,
-                project_root=project_root,
+                project_root=shown_root,
             )
         except Exception as e:
             return SearchResultModel(
-                success=False, message=f"Query failed: {e!s}", project_root=project_root
+                success=False, message=f"Query failed: {e!s}", project_root=shown_root
             )
 
     return mcp

@@ -263,7 +263,9 @@ search(
 )
 ```
 
-Returns matching code chunks with file path, language, code content, line numbers, and similarity score.
+Returns matching code chunks with file path, language, code content, line numbers, and similarity score, plus the `project_root` the file paths are relative to.
+
+`project_path` lets one server search any initialized project on the machine (in Docker: under the mounted workspace), so an agent that changes directory keeps searching the checkout it is in. The project is the nearest directory at or above `project_path` holding `.cocoindex_code/settings.yml`; a checkout nested inside another project (for example a git worktree under `.claude/worktrees/`) needs its own `ccc init -f`, or it resolves to the enclosing project. `ccc mcp` also starts outside any project; calls must then pass `project_path`.
 </details>
 
 ## Manual CLI Usage
@@ -440,7 +442,7 @@ Now `cd` into any project under your workspace and run `ccc init`, `ccc index`,
 <details>
 <summary>Claude Code</summary>
 
-Register MCP from inside the target project so `$PWD` points there:
+Register MCP from inside the target project so `$PWD` points there (it is the project searched when a call omits `project_path`):
 
 ```bash
 claude mcp add cocoindex-code -- docker exec -i \
