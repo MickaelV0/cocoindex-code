@@ -1,8 +1,11 @@
 """MCP server for codebase indexing and querying.
 
 Supports two modes:
-1. Daemon-backed: ``create_mcp_server(client, project_root)`` — lightweight MCP
-   server that delegates to the daemon via per-request client functions.
+1. Daemon-backed: ``create_mcp_server(default_project_root)`` — lightweight MCP
+   server that delegates to the daemon via per-request client functions. The
+   project is resolved per call from the ``project_path`` tool parameter, with
+   ``default_project_root`` (the project the server started in) as the fallback
+   only when the parameter is omitted.
 2. Legacy entry point: ``main()`` — backward-compatible ``cocoindex-code`` CLI that
    auto-creates settings from env vars and delegates to the daemon.
 """
@@ -18,7 +21,12 @@ from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field
 
 from ._version import __version__
-from .settings import DaemonSettings, load_user_settings
+from .settings import (
+    DaemonSettings,
+    find_project_root,
+    load_user_settings,
+    normalize_input_path,
+)
 
 _MCP_INSTRUCTIONS = (
     "Code search and codebase understanding tools."
@@ -59,8 +67,13 @@ class SearchResultModel(BaseModel):
 # === Daemon-backed MCP server factory ===
 
 
-def create_mcp_server(project_root: str) -> MCPServer:
-    """Create a lightweight MCP server that delegates to the daemon."""
+def create_mcp_server(default_project_root: str | None = None) -> MCPServer:
+    """Create a lightweight MCP server that delegates to the daemon.
+
+    ``default_project_root`` is the project searched when a call omits
+    ``project_path``; ``None`` means the server started outside any project, so
+    such calls fail with a clear message instead of guessing.
+    """
     mcp = MCPServer("cocoindex-code", instructions=_MCP_INSTRUCTIONS, version=__version__)
 
     @mcp.tool(
@@ -78,6 +91,8 @@ def create_mcp_server(project_root: str) -> MCPServer:
             " line numbers, and relevance scores."
             " Start with a small limit (e.g., 5);"
             " if most results look relevant, use offset to paginate for more."
+            " Pass project_path (your current working directory)"
+            " to search the project that contains it."
         ),
     )
     async def search(
@@ -120,9 +135,41 @@ def create_mcp_server(project_root: str) -> MCPServer:
                 " Example: ['src/utils/*', '*.py']"
             ),
         ),
+        project_path: str | None = Field(
+            default=None,
+            description=(
+                "A path inside the project to search, normally your current working"
+                " directory. The project is the nearest ancestor directory that holds"
+                " .cocoindex_code/settings.yml. Omit to search the project this server"
+                " was started in."
+            ),
+        ),
     ) -> SearchResultModel:
         """Query the codebase index via the daemon."""
         from . import client as _client
+
+        if project_path is None:
+            if default_project_root is None:
+                return SearchResultModel(
+                    success=False,
+                    message=(
+                        "This server was started outside a ccc project."
+                        " Pass project_path (a path inside the project to search),"
+                        " or run `ccc init` in the project root."
+                    ),
+                )
+            project_root = default_project_root
+        else:
+            found = find_project_root(Path(normalize_input_path(project_path)))
+            if found is None:
+                return SearchResultModel(
+                    success=False,
+                    message=(
+                        f"No ccc project found at or above {project_path!r}."
+                        " Run `ccc init` in the project root."
+                    ),
+                )
+            project_root = str(found)
 
         loop = asyncio.get_event_loop()
         try:
@@ -232,7 +279,6 @@ def main() -> None:
         default_project_settings,
         default_user_settings,
         find_legacy_project_root,
-        find_project_root,
         project_settings_path,
         save_project_settings,
         save_user_settings,
