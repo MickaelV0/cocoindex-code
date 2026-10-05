@@ -259,7 +259,7 @@ search(
     refresh_index: bool = True,          # Refresh index before querying
     languages: list[str] | None = None,  # Filter by language (e.g. ["python", "typescript"])
     paths: list[str] | None = None,      # Filter by path glob (e.g. ["src/utils/*"])
-    project_path: str | None = None,     # Path inside the project to search (usually your cwd); omit for the server's startup project
+    project_path: str | None = None,     # Absolute path inside the project to search (usually your cwd); omit for the startup project
 )
 ```
 

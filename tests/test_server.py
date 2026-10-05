@@ -34,6 +34,7 @@ async def test_mcp_server_uses_v2_protocol(monkeypatch: pytest.MonkeyPatch) -> N
         "total_returned": 0,
         "offset": 0,
         "message": None,
+        "project_root": ".",
     }
 
 
@@ -88,6 +89,8 @@ async def test_search_project_path_selects_project_per_call(
 
     assert other.structured_content is not None and other.structured_content["success"] is True
     assert default.structured_content is not None and default.structured_content["success"] is True
+    assert other.structured_content["project_root"] == str(project_b)
+    assert default.structured_content["project_root"] == str(project_a)
     assert calls.index_roots == [str(project_b), str(project_a)]
     assert calls.search_roots == [str(project_b), str(project_a)]
 

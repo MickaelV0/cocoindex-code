@@ -46,7 +46,7 @@ _MCP_INSTRUCTIONS = (
 class CodeChunkResult(BaseModel):
     """A single code chunk result."""
 
-    file_path: str = Field(description="Relative path to the file")
+    file_path: str = Field(description="Path relative to the searched project_root")
     language: str = Field(description="Programming language")
     content: str = Field(description="The code content")
     start_line: int = Field(description="Starting line number (1-indexed)")
@@ -62,6 +62,10 @@ class SearchResultModel(BaseModel):
     total_returned: int = Field(default=0)
     offset: int = Field(default=0)
     message: str | None = None
+    project_root: str | None = Field(
+        default=None,
+        description="Project the results come from; file paths are relative to it",
+    )
 
 
 # === Daemon-backed MCP server factory ===
@@ -91,8 +95,9 @@ def create_mcp_server(default_project_root: str | None = None) -> MCPServer:
             " line numbers, and relevance scores."
             " Start with a small limit (e.g., 5);"
             " if most results look relevant, use offset to paginate for more."
-            " Pass project_path (your current working directory)"
-            " to search the project that contains it."
+            " Always pass project_path set to your current working directory:"
+            " this server may have been started in another checkout, and the"
+            " project searched is the one containing project_path."
         ),
     )
     async def search(
@@ -138,10 +143,11 @@ def create_mcp_server(default_project_root: str | None = None) -> MCPServer:
         project_path: str | None = Field(
             default=None,
             description=(
-                "A path inside the project to search, normally your current working"
-                " directory. The project is the nearest ancestor directory that holds"
-                " .cocoindex_code/settings.yml. Omit to search the project this server"
-                " was started in."
+                "Absolute path of your current working directory, or any path inside"
+                " the project to search. The project is the nearest ancestor directory"
+                " holding .cocoindex_code/settings.yml. When omitted, the project this"
+                " server was started in is searched, even if your working directory has"
+                " since moved to another checkout."
             ),
         ),
     ) -> SearchResultModel:
@@ -202,9 +208,12 @@ def create_mcp_server(default_project_root: str | None = None) -> MCPServer:
                 total_returned=resp.total_returned,
                 offset=resp.offset,
                 message=resp.message,
+                project_root=project_root,
             )
         except Exception as e:
-            return SearchResultModel(success=False, message=f"Query failed: {e!s}")
+            return SearchResultModel(
+                success=False, message=f"Query failed: {e!s}", project_root=project_root
+            )
 
     return mcp
 
