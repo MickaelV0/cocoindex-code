@@ -375,8 +375,16 @@ def fake_home_cli(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return home
 
 
-def test_index_in_user_settings_root_refuses_to_auto_init(fake_home_cli: Path) -> None:
+def test_index_in_user_settings_root_refuses_to_auto_init(
+    fake_home_cli: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from typer.testing import CliRunner
+
+    # Without the guard, `ccc index` goes on to index via a real daemon; fail fast instead.
+    def _no_daemon(_root: str) -> None:
+        raise AssertionError("ccc index reached the daemon from the user settings root")
+
+    monkeypatch.setattr(cli, "_run_index_with_progress", _no_daemon)
 
     result = CliRunner().invoke(cli.app, ["index"])
 
