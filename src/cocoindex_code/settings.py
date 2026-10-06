@@ -379,6 +379,29 @@ def auto_init_refusal(directory: Path) -> str | None:
     )
 
 
+def user_settings_root_note(root: Path, start: Path) -> str | None:
+    """Explain why a repo containing *start* resolves to the user settings root.
+
+    Such a project is usually left over from an older ccc that auto-initialized
+    ``$HOME``: every repo below it without settings of its own resolves to it.
+    Returns ``None`` unless *root* is the user settings root and *start* lies in
+    a repo below it.
+    """
+    if not is_user_settings_root(root):
+        return None
+    repo = find_parent_with_marker(start)
+    if repo is None or repo == root:
+        return None
+    shown_root = format_path_for_display(root)
+    shown_repo = format_path_for_display(repo)
+    return (
+        f"{shown_repo} has no ccc project of its own, so the project in use is"
+        f" {shown_root}, whose .cocoindex_code directory is also ccc's user settings"
+        f" directory. If {shown_root} is not meant to be a project, run"
+        f" `ccc reset --all` there, then `ccc init` in {shown_repo}."
+    )
+
+
 def find_project_root(start: Path) -> Path | None:
     """Walk up from *start* looking for ``.cocoindex_code/settings.yml``.
 

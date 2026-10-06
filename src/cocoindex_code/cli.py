@@ -32,7 +32,6 @@ from .settings import (
     find_parent_with_marker,
     find_project_root,
     format_path_for_display,
-    is_user_settings_root,
     normalize_input_path,
     project_settings_path,
     resolve_db_dir,
@@ -40,6 +39,7 @@ from .settings import (
     save_project_settings,
     target_sqlite_db_path,
     user_settings_path,
+    user_settings_root_note,
 )
 
 app = _typer.Typer(
@@ -122,25 +122,10 @@ def require_project_root(*, auto_init: bool = False) -> Path:
 
 
 def _note_if_user_settings_root(root: Path) -> None:
-    """Tell the user when a repo below the user settings root resolves to it.
-
-    Such a project is usually left over from an older ccc that auto-initialized
-    ``$HOME``: every repo below it without settings of its own resolves to it.
-    """
-    if not is_user_settings_root(root):
-        return
-    repo = find_parent_with_marker(Path.cwd())
-    if repo is None or repo == root:
-        return
-    shown_root = format_path_for_display(root)
-    shown_repo = format_path_for_display(repo)
-    _typer.echo(
-        f"Note: {shown_repo} has no ccc project of its own, so the project in use is"
-        f" {shown_root}, whose .cocoindex_code directory is also ccc's user settings"
-        f" directory. If {shown_root} is not meant to be a project, run"
-        f" `ccc reset --all` there, then `ccc init` in {shown_repo}.",
-        err=True,
-    )
+    """Tell the user when a repo below the user settings root resolves to it."""
+    note = user_settings_root_note(root, Path.cwd())
+    if note is not None:
+        _typer.echo(f"Note: {note}", err=True)
 
 
 def _auto_init_root(cwd: Path) -> Path:

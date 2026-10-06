@@ -18,7 +18,7 @@ from mcp.server.mcpserver import MCPServer
 from pydantic import BaseModel, Field
 
 from ._version import __version__
-from .settings import DaemonSettings, load_user_settings
+from .settings import DaemonSettings, load_user_settings, user_settings_root_note
 
 _MCP_INSTRUCTIONS = (
     "Code search and codebase understanding tools."
@@ -54,6 +54,13 @@ class SearchResultModel(BaseModel):
     total_returned: int = Field(default=0)
     offset: int = Field(default=0)
     message: str | None = None
+
+
+def _with_note(message: str | None, note: str | None) -> str | None:
+    """Append *note* to a result message; MCP clients hide the server's stderr."""
+    if note is None:
+        return message
+    return f"{message}\nNote: {note}" if message else f"Note: {note}"
 
 
 # === Daemon-backed MCP server factory ===
@@ -125,7 +132,9 @@ def create_mcp_server(project_root: str) -> MCPServer:
         from . import client as _client
 
         loop = asyncio.get_event_loop()
+        note: str | None = None
         try:
+            note = user_settings_root_note(Path(project_root), Path.cwd())
             if refresh_index:
                 await loop.run_in_executor(None, lambda: _client.index(project_root))
             resp = await loop.run_in_executor(
@@ -154,10 +163,12 @@ def create_mcp_server(project_root: str) -> MCPServer:
                 ],
                 total_returned=resp.total_returned,
                 offset=resp.offset,
-                message=resp.message,
+                message=_with_note(resp.message, note),
             )
         except Exception as e:
-            return SearchResultModel(success=False, message=f"Query failed: {e!s}")
+            return SearchResultModel(
+                success=False, message=_with_note(f"Query failed: {e!s}", note)
+            )
 
     return mcp
 
