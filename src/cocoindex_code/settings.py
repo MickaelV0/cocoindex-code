@@ -374,8 +374,8 @@ def auto_init_refusal(directory: Path) -> str | None:
         f"{shown} has no project settings, and ccc does not create them there"
         f" automatically: its {_SETTINGS_DIR_NAME} directory is ccc's user settings"
         " directory, so a project there would cover every directory below it."
-        " Run ccc from inside a project instead. Indexing all of"
-        f" {shown} is for the user to decide: they can run `ccc init` there."
+        " Run ccc from inside a project instead. To index all of"
+        f" {shown}, run `ccc init` there."
     )
 
 
