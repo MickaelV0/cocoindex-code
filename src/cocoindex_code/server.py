@@ -253,12 +253,14 @@ def main() -> None:
     # --- Discover project root ---
     cwd = Path.cwd()
     project_root = find_project_root(cwd)
+    root_from_env = False
 
     if project_root is None:
         # Try env var
         env_root = os.environ.get("COCOINDEX_CODE_ROOT_PATH")
         if env_root:
             project_root = Path(env_root).resolve()
+            root_from_env = True
         else:
             # Use marker-based discovery
             legacy_root = find_legacy_project_root(cwd)
@@ -267,7 +269,9 @@ def main() -> None:
     # --- Auto-create project settings if needed ---
     proj_settings_file = project_settings_path(project_root)
     if not proj_settings_file.is_file():
-        refusal = auto_init_refusal(project_root)
+        # COCOINDEX_CODE_ROOT_PATH is a deliberate choice, like `ccc init`: only a
+        # root found by discovery is refused.
+        refusal = None if root_from_env else auto_init_refusal(project_root)
         if refusal is not None:
             sys.exit(
                 f"Error: {refusal} To serve a project from here, set"
