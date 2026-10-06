@@ -48,6 +48,10 @@ def test_claude_hooks_cover_session_start_and_post_edit() -> None:
     matcher = hooks["PostToolUse"][0]["matcher"]
     assert "Edit" in matcher
     assert "Write" in matcher
+    # One command for both events: the behavior tests below run each, but only
+    # equality keeps a fix to one from silently missing the other.
+    commands = _hook_commands()
+    assert commands["PostToolUse"] == commands["SessionStart"]
 
 
 def _hook_commands() -> dict[str, str]:
